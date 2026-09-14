@@ -1,0 +1,9 @@
+Flask>=3.0
+numpy>=1.26
+pandas>=2.2
+scikit-learn>=1.5
+requests>=2.31
+python-whois>=0.9
+dnspython>=2.6
+tldextract>=5.1
+gunicorn>=22.0

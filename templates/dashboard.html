@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PhishGuard — Admin Dashboard</title>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+</head>
+<body>
+<div class="bg-grid"></div>
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% if messages %}
+    <div class="flash-wrap">
+      {% for cat,msg in messages %}
+        <div class="flash flash-{{cat}}">{{ msg }}</div>
+      {% endfor %}
+    </div>
+  {% endif %}
+{% endwith %}
+
+<div class="dash-shell">
+
+  <!-- Sidebar -->
+  <aside class="dash-sidebar">
+    <div class="ds-logo">⬡ PhishGuard AI</div>
+    <nav class="ds-nav">
+      <a class="ds-item active" href="/dashboard">⬡ Overview</a>
+      <a class="ds-item" href="/">🔍 Scanner</a>
+      <a class="ds-item" href="/dashboard">📋 Scan History</a>
+      <a class="ds-item" href="/dashboard">🚫 Blacklist</a>
+      <a class="ds-item" href="/logout" style="color:var(--red);margin-top:auto">↩ Logout</a>
+    </nav>
+    <div class="ds-footer">
+      <div class="ds-user">
+        Logged in as<br><strong style="color:var(--text)">{{ username }}</strong>
+      </div>
+      <div style="margin-top:10px;font-family:var(--mono);font-size:10px;color:var(--text3)">
+        ML Acc: {{ "%.1f"|format((metadata.accuracy or 0)*100) }}%<br>
+        Features: {{ metadata.features|length if metadata.features else 0 }}<br>
+        Model: Ensemble (GB+RF+LR)
+      </div>
+    </div>
+  </aside>
+
+  <!-- Main -->
+  <main class="dash-main">
+
+    <div class="dash-topbar">
+      <div>
+        <div class="dash-title">Security Dashboard</div>
+        <div class="dash-sub">Real-time threat analytics · PhishGuard AI</div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <div class="model-badge">
+          <span class="badge-dot"></span>
+          <span>{{ "%.1f"|format((metadata.accuracy or 0)*100) }}% Model Accuracy</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Stat cards -->
+    <div class="stat-row">
+      <div class="stat-card stat-teal">
+        <div class="stat-label">Total Scans</div>
+        <div class="stat-val">{{ stats.total }}</div>
+        <div class="stat-sub">All time</div>
+      </div>
+      <div class="stat-card stat-green">
+        <div class="stat-label">Safe</div>
+        <div class="stat-val">{{ stats.by_label.get(0,0) }}</div>
+        <div class="stat-sub">Verified clean</div>
+      </div>
+      <div class="stat-card stat-yellow">
+        <div class="stat-label">Suspicious</div>
+        <div class="stat-val">{{ stats.by_label.get(1,0) }}</div>
+        <div class="stat-sub">Needs review</div>
+      </div>
+      <div class="stat-card stat-red">
+        <div class="stat-label">Phishing</div>
+        <div class="stat-val">{{ stats.by_label.get(2,0) }}</div>
+        <div class="stat-sub">Threats blocked</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Avg Risk</div>
+        <div class="stat-val" style="color:var(--orange)">{{ stats.avg_risk }}%</div>
+        <div class="stat-sub">Across all scans</div>
+      </div>
+      <div class="stat-card stat-red">
+        <div class="stat-label">Threats Today</div>
+        <div class="stat-val">{{ stats.threats_today }}</div>
+        <div class="stat-sub">Last 24 hours</div>
+      </div>
+    </div>
+
+    <!-- Charts -->
+    <div class="charts-row">
+      <div class="chart-card">
+        <div class="chart-title">Threat Distribution</div>
+        <div style="position:relative;height:200px">
+          <canvas id="donutChart"></canvas>
+        </div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-title">Scans — Last 7 Days</div>
+        <div style="position:relative;height:200px">
+          <canvas id="lineChart"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <!-- Feature importance -->
+    <div class="chart-card" style="margin-bottom:20px">
+      <div class="chart-title">Top ML Feature Importances</div>
+      <div style="position:relative;height:180px">
+        <canvas id="barChart"></canvas>
+      </div>
+    </div>
+
+    <!-- Scan history -->
+    <div class="table-card" style="margin-bottom:20px">
+      <div class="table-head">
+        <span>Recent Scan History</span>
+        <span>{{ scans|length }} records</span>
+      </div>
+      <div style="overflow-x:auto">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>#</th><th>URL</th><th>Verdict</th><th>Risk</th>
+              <th>SSL</th><th>DNS</th><th>Domain Age</th><th>Scanned At</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for s in scans %}
+            <tr>
+              <td>{{ s.id }}</td>
+              <td class="td-url" title="{{ s.url }}">{{ s.url }}</td>
+              <td><span class="lbadge lb-{{ s.prediction|lower }}">{{ s.prediction }}</span></td>
+              <td style="color:{% if s.risk_score>70 %}var(--red){% elif s.risk_score>35 %}var(--yellow){% else %}var(--green){% endif %}">
+                {{ "%.1f"|format(s.risk_score) }}%
+              </td>
+              <td>{% if s.ssl_valid %}<span style="color:var(--green)">✓</span>{% else %}<span style="color:var(--red)">✗</span>{% endif %}</td>
+              <td>{% if s.dns_resolves %}<span style="color:var(--green)">✓</span>{% else %}<span style="color:var(--red)">✗</span>{% endif %}</td>
+              <td style="color:var(--text2)">{% if s.domain_age %}{{ s.domain_age }}d{% else %}—{% endif %}</td>
+              <td style="color:var(--text3)">{{ s.scanned_at }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="8" style="text-align:center;padding:24px;color:var(--text3)">No scans yet.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Top Threats -->
+    {% if stats.top_threats %}
+    <div class="table-card" style="margin-bottom:20px">
+      <div class="table-head"><span>🚨 Top Phishing Threats (by Risk Score)</span></div>
+      <div style="overflow-x:auto">
+        <table class="data-table">
+          <thead><tr><th>URL</th><th>Risk Score</th><th>Detected At</th></tr></thead>
+          <tbody>
+            {% for t in stats.top_threats %}
+            <tr>
+              <td class="td-url" title="{{ t.url }}">{{ t.url }}</td>
+              <td style="color:var(--red);font-weight:700">{{ "%.1f"|format(t.risk_score) }}%</td>
+              <td style="color:var(--text3)">{{ t.scanned_at }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% endif %}
+
+    <!-- Blacklist -->
+    <div class="table-card">
+      <div class="table-head">
+        <span>🚫 URL Blacklist</span>
+        <span>{{ blacklist|length }} entries</span>
+      </div>
+      <div style="overflow-x:auto">
+        <table class="data-table">
+          <thead><tr><th>URL</th><th>Reason</th><th>Added By</th><th>Added At</th></tr></thead>
+          <tbody>
+            {% for item in blacklist %}
+            <tr>
+              <td class="td-url" title="{{ item.url }}">{{ item.url }}</td>
+              <td>{{ item.reason }}</td>
+              <td style="color:var(--text3)">{{ item.added_by or "admin" }}</td>
+              <td style="color:var(--text3)">{{ item.added_at }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="4" style="text-align:center;padding:20px;color:var(--text3)">Blacklist is empty.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <form class="bl-form" action="/admin/blacklist/add" method="POST">
+        <input class="bl-input" type="text" name="url" placeholder="URL to blacklist…" required>
+        <input class="bl-input" type="text" name="reason" placeholder="Reason (optional)">
+        <button type="submit" class="bl-btn">🚫 Add</button>
+      </form>
+    </div>
+
+    <!-- Footer -->
+    <div style="margin-top:24px;font-family:var(--mono);font-size:11px;color:var(--text3);text-align:center">
+      PhishGuard AI · Authors: Sarthak Mehta, Prajwal Kumar, Divyansh Yadav
+    </div>
+
+  </main>
+</div>
+
+<script>
+Chart.defaults.color        = "#7a8faa";
+Chart.defaults.borderColor  = "rgba(34,211,238,.1)";
+Chart.defaults.font.family  = "'JetBrains Mono', monospace";
+Chart.defaults.font.size    = 11;
+
+// Donut
+new Chart(document.getElementById("donutChart"), {
+  type: "doughnut",
+  data: {
+    labels: ["Safe","Suspicious","Phishing"],
+    datasets: [{
+      data: [
+        {{ stats.by_label.get(0,0) }},
+        {{ stats.by_label.get(1,0) }},
+        {{ stats.by_label.get(2,0) }},
+      ],
+      backgroundColor: ["rgba(16,185,129,.7)","rgba(245,158,11,.7)","rgba(239,68,68,.7)"],
+      borderColor:      ["#10b981","#f59e0b","#ef4444"],
+      borderWidth: 1.5, hoverOffset: 6,
+    }]
+  },
+  options: {
+    responsive:true, maintainAspectRatio:false, cutout:"65%",
+    plugins:{ legend:{ position:"bottom", labels:{ padding:14, usePointStyle:true }}}
+  }
+});
+
+// Line
+const daily = {{ stats.daily | tojson }};
+new Chart(document.getElementById("lineChart"), {
+  type: "line",
+  data: {
+    labels: daily.map(d => d.day.slice(5)),
+    datasets:[{
+      label:"Scans", data: daily.map(d => d.count),
+      borderColor:"rgba(34,211,238,.9)",
+      backgroundColor:"rgba(34,211,238,.07)",
+      borderWidth:2, pointBackgroundColor:"#22d3ee",
+      pointRadius:4, tension:.4, fill:true,
+    }]
+  },
+  options:{
+    responsive:true, maintainAspectRatio:false,
+    scales:{
+      y:{ beginAtZero:true, grid:{color:"rgba(34,211,238,.08)"}, ticks:{stepSize:1} },
+      x:{ grid:{color:"rgba(34,211,238,.05)"} }
+    },
+    plugins:{ legend:{ display:false } }
+  }
+});
+
+// Bar - feature importances
+const fi = {{ metadata.get("feature_importance",{}) | tojson }};
+const topFi = Object.entries(fi).sort((a,b)=>b[1]-a[1]).slice(0,10);
+new Chart(document.getElementById("barChart"), {
+  type:"bar",
+  data:{
+    labels: topFi.map(f=>f[0]),
+    datasets:[{
+      label:"Importance",
+      data: topFi.map(f=>f[1]),
+      backgroundColor:"rgba(34,211,238,.5)",
+      borderColor:"rgba(34,211,238,.9)",
+      borderWidth:1, borderRadius:3,
+    }]
+  },
+  options:{
+    responsive:true, maintainAspectRatio:false, indexAxis:"y",
+    scales:{
+      x:{ beginAtZero:true, grid:{color:"rgba(34,211,238,.06)"} },
+      y:{ grid:{ display:false } }
+    },
+    plugins:{ legend:{ display:false } }
+  }
+});
+
+// Auto-dismiss flash
+setTimeout(()=>{
+  document.querySelectorAll(".flash").forEach(el=>{
+    el.style.transition="opacity .5s"; el.style.opacity="0";
+    setTimeout(()=>el.remove(),500);
+  });
+},3500);
+</script>
+</body>
+</html>

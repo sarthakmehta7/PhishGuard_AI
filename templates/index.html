@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PhishGuard AI — Real-Time Phishing Detection</title>
+  <meta name="description" content="Advanced AI/ML phishing detection with live DNS, SSL, WHOIS analysis.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+</head>
+<body>
+
+<!-- background grid -->
+<div class="bg-grid"></div>
+
+<!-- ── NAV ── -->
+<nav class="nav">
+  <div class="nav-left">
+    <div class="nav-logo">
+      <div class="logo-hex">
+        <svg width="28" height="28" viewBox="0 0 28 28"><polygon points="14,2 26,8 26,20 14,26 2,20 2,8" fill="none" stroke="url(#lgrad)" stroke-width="1.5"/><circle cx="14" cy="14" r="5" fill="url(#lgrad)"/><defs><linearGradient id="lgrad" x1="0" y1="0" x2="28" y2="28"><stop offset="0%" stop-color="#22d3ee"/><stop offset="100%" stop-color="#6366f1"/></linearGradient></defs></svg>
+      </div>
+      <div>
+        <div class="logo-name">PhishGuard <span>AI</span></div>
+        <div class="logo-sub">Real-Time Detection System</div>
+      </div>
+    </div>
+  </div>
+  <div class="nav-right">
+    <div class="model-badge {% if not model_ok %}badge-warn{% endif %}">
+      {% if model_ok %}
+        <span class="badge-dot"></span>
+        <span>ML Model Active · {{ "%.1f"|format((metadata.accuracy or 0)*100) }}% Acc</span>
+      {% else %}
+        <span class="badge-dot" style="background:#f59e0b"></span>
+        <span>Model not loaded</span>
+      {% endif %}
+    </div>
+    <a href="/dashboard" class="nav-btn-ghost">Dashboard</a>
+    <a href="/login" class="nav-btn">Admin →</a>
+  </div>
+</nav>
+
+<!-- ── HERO ── -->
+<header class="hero">
+  <div class="hero-eyebrow">
+    Advanced ML · 30 Real Features · Live DNS / SSL / WHOIS
+  </div>
+  <h1 class="hero-h1">Detect Phishing.<br><span>In Real Time.</span></h1>
+  <p class="hero-p">
+    Our ensemble ML model — trained on public threat-intelligence feeds and 30 cybersecurity features —
+    runs alongside live certificate, DNS, and domain-age checks. No simulations.
+  </p>
+
+  <!-- ── SCANNER ── -->
+  <div class="scanner-wrap">
+    <div class="scanner-bar">
+      <div class="sb-indicator" id="sbIndicator"></div>
+      <span class="sb-label">THREAT SCANNER</span>
+    </div>
+    <div class="scanner-input-row">
+      <div class="url-field" id="urlField">
+        <span class="url-prefix">URL</span>
+        <input type="text" id="urlInput" class="url-input"
+               placeholder="Paste any URL — e.g. https://example.com or suspicious-link.xyz/login"
+               autocomplete="off" spellcheck="false" />
+        <button class="scan-trigger" id="scanBtn" onclick="startScan()">
+          <span id="scanBtnText">Scan Now</span>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+        </button>
+      </div>
+    </div>
+    <div class="scanner-chips">
+      <button class="chip" onclick="loadExample('https://google.com')">✓ google.com</button>
+      <button class="chip" onclick="loadExample('http://paypa1-verify-account.xyz/login?token=abc123')">⚠ Phishing example</button>
+      <button class="chip" onclick="loadExample('http://192.168.1.1/bank/login.php')">⚠ IP-based attack</button>
+      <button class="chip" onclick="loadExample('http://bit.ly/3xPhish')">⚠ Shortened URL</button>
+    </div>
+  </div>
+</header>
+
+<!-- ── LOADING STATE ── -->
+<div class="scan-loading" id="scanLoading" style="display:none">
+  <div class="loading-inner">
+    <div class="scan-ring"></div>
+    <div class="scan-steps" id="scanSteps"></div>
+  </div>
+</div>
+
+<!-- ── RESULT ── -->
+<section class="result-section" id="resultSection" style="display:none">
+  <div class="result-inner">
+
+    <!-- Verdict -->
+    <div class="verdict-card" id="verdictCard">
+      <div class="verdict-left">
+        <div class="verdict-icon" id="verdictIcon"></div>
+        <div>
+          <div class="verdict-label">VERDICT</div>
+          <div class="verdict-text" id="verdictText"></div>
+          <div class="verdict-url" id="verdictUrl"></div>
+        </div>
+      </div>
+      <div class="verdict-right">
+        <div class="risk-ring-wrap">
+          <svg class="risk-ring" width="110" height="110" viewBox="0 0 110 110">
+            <circle cx="55" cy="55" r="46" fill="none" stroke="rgba(255,255,255,.08)" stroke-width="8"/>
+            <circle cx="55" cy="55" r="46" fill="none" id="riskArc"
+                    stroke="url(#riskGrad)" stroke-width="8"
+                    stroke-linecap="round" stroke-dasharray="289"
+                    stroke-dashoffset="289"
+                    transform="rotate(-90 55 55)"/>
+            <text x="55" y="50" text-anchor="middle" font-size="22" font-weight="700" fill="white" id="riskPct">0%</text>
+            <text x="55" y="67" text-anchor="middle" font-size="10" fill="rgba(255,255,255,.5)">RISK</text>
+            <defs>
+              <linearGradient id="riskGrad" x1="0" y1="0" x2="1" y2="0">
+                <stop offset="0%" stop-color="#22d3ee"/>
+                <stop offset="50%" stop-color="#f59e0b"/>
+                <stop offset="100%" stop-color="#ef4444"/>
+              </linearGradient>
+            </defs>
+          </svg>
+        </div>
+      </div>
+    </div>
+
+    <!-- Probability bars -->
+    <div class="prob-row" id="probRow"></div>
+
+    <!-- Live check grid -->
+    <div class="checks-grid" id="checksGrid"></div>
+
+    <!-- Feature breakdown -->
+    <div class="feature-section">
+      <div class="section-head">ML Feature Analysis <span class="sh-badge">30 Features</span></div>
+      <div class="feature-grid" id="featureGrid"></div>
+    </div>
+
+    <!-- Detection findings -->
+    <div class="findings-section">
+      <div class="section-head">Detection Findings</div>
+      <div class="findings-list" id="findingsList"></div>
+    </div>
+
+    <!-- Recommendations -->
+    <div class="reco-section">
+      <div class="section-head">Security Recommendations</div>
+      <div class="reco-list" id="recoList"></div>
+    </div>
+
+    <!-- Actions -->
+    <div class="result-actions">
+      <button class="act-btn act-primary" onclick="resetScanner()">← Scan Another</button>
+      <button class="act-btn act-ghost" onclick="copyReport()">Copy Report</button>
+      <button class="act-btn act-ghost" onclick="submitFeedback()">Was this wrong? →</button>
+    </div>
+
+  </div>
+</section>
+
+<!-- ── BULK SCAN ── -->
+<section class="bulk-section">
+  <div class="bulk-inner">
+    <div class="bulk-head">
+      <div>
+        <div class="section-head">Bulk URL Scanner</div>
+        <p class="bulk-desc">Scan up to 10 URLs at once</p>
+      </div>
+      <button class="act-btn act-primary" onclick="runBulk()">Run Bulk Scan</button>
+    </div>
+    <textarea id="bulkInput" class="bulk-textarea"
+              placeholder="Enter one URL per line...&#10;https://example.com&#10;http://suspicious-site.xyz/login&#10;http://bit.ly/abc123"></textarea>
+    <div id="bulkResults" class="bulk-results" style="display:none"></div>
+  </div>
+</section>
+
+<!-- ── HOW IT WORKS ── -->
+<section class="how-section">
+  <div class="how-inner">
+    <div class="how-head">How PhishGuard Works</div>
+    <div class="steps-row">
+      <div class="step-card">
+        <div class="step-n">01</div>
+        <div class="step-title">30 Features Extracted</div>
+        <div class="step-body">URL structure, domain age, subdomains, keywords, TLD, encoding, brand impersonation and more — all computed instantly.</div>
+      </div>
+      <div class="step-card">
+        <div class="step-n">02</div>
+        <div class="step-title">Live Network Checks</div>
+        <div class="step-body">Real DNS resolution, SSL certificate inspection, WHOIS domain age lookup, and HTTP header security audit performed live.</div>
+      </div>
+      <div class="step-card">
+        <div class="step-n">03</div>
+        <div class="step-title">Ensemble ML Prediction</div>
+        <div class="step-body">GradientBoosting + RandomForest + LogisticRegression voting classifier, trained on real labelled public threat-intelligence data with cross-validation.</div>
+      </div>
+      <div class="step-card">
+        <div class="step-n">04</div>
+        <div class="step-title">Verdict + Actions</div>
+        <div class="step-body">Risk score, confidence probabilities, human-readable findings and actionable security recommendations delivered in seconds.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── FOOTER ── -->
+<footer class="footer">
+  <div class="footer-inner">
+    <div class="footer-logo">⬡ PhishGuard AI</div>
+    <div class="footer-authors">
+      Built by <strong>Sarthak Mehta</strong> · <strong>Prajwal Kumar</strong> · <strong>Divyansh Yadav</strong>
+    </div>
+    <div class="footer-tech">
+      Python · Flask · scikit-learn · Random Forest · GradientBoosting · SQLite · Real DNS/SSL/WHOIS
+    </div>
+  </div>
+</footer>
+
+<script src="{{ url_for('static', filename='js/main.js') }}"></script>
+</body>
+</html>

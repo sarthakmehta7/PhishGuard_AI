@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PhishGuard — Admin Login</title>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+</head>
+<body>
+<div class="bg-grid"></div>
+
+<div class="login-page">
+  <div class="login-card">
+    <div class="login-logo">
+      <svg width="40" height="40" viewBox="0 0 28 28" style="margin-bottom:10px">
+        <polygon points="14,2 26,8 26,20 14,26 2,20 2,8" fill="none" stroke="url(#lg)" stroke-width="1.5"/>
+        <circle cx="14" cy="14" r="5" fill="url(#lg)"/>
+        <defs>
+          <linearGradient id="lg" x1="0" y1="0" x2="28" y2="28">
+            <stop offset="0%" stop-color="#22d3ee"/>
+            <stop offset="100%" stop-color="#6366f1"/>
+          </linearGradient>
+        </defs>
+      </svg>
+      <div class="login-logo-name">PhishGuard AI</div>
+    </div>
+    <div class="login-sub">Admin Access — Secure Login</div>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for cat, msg in messages %}
+          <div class="flash flash-{{ cat }}" style="margin-bottom:12px">{{ msg }}</div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+
+    <form method="POST" action="/login">
+      <div class="form-field">
+        <label class="form-lbl">Username</label>
+        <input class="form-inp" type="text" name="username" placeholder="admin" required autocomplete="username">
+      </div>
+      <div class="form-field">
+        <label class="form-lbl">Password</label>
+        <input class="form-inp" type="password" name="password" placeholder="••••••••" required autocomplete="current-password">
+      </div>
+      <button type="submit" class="form-btn">Login to Dashboard →</button>
+    </form>
+
+    <div style="text-align:center;margin-top:20px">
+      <a href="/" style="font-family:var(--mono);font-size:11px;color:var(--text3);text-decoration:none">← Back to Scanner</a>
+    </div>
+
+    <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--border);
+                font-family:var(--mono);font-size:10px;color:var(--text3);text-align:center;letter-spacing:.05em">
+      Default: admin / admin@123 · Change in production!<br><br>
+      Authors: Sarthak Mehta · Prajwal Kumar · Divyansh Yadav
+    </div>
+  </div>
+</div>
+</body>
+</html>

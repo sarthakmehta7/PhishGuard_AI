@@ -73,6 +73,9 @@ def setup():
     elif not admin_username or not admin_password:
         logger.warning("ADMIN_USERNAME/ADMIN_PASSWORD not set; no admin account will be bootstrapped.")
 
+# Initialize the database for both local execution and WSGI servers.
+setup()
+
 # ─────────────────────────────────────────────────────────────
 #  PUBLIC ROUTES
 # ─────────────────────────────────────────────────────────────

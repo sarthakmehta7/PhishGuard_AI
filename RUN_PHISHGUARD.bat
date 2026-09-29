@@ -17,6 +17,11 @@ if not exist ".venv\Scripts\python.exe" (
 )
 call ".venv\Scripts\activate.bat"
 echo Installing/updating dependencies...
+if not exist ".env" (
+  echo Creating secure local environment file...
+  python scripts\init_env.py
+  if errorlevel 1 goto :err
+)
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
 if errorlevel 1 goto :err

@@ -58,3 +58,19 @@ def test_private_scan_target_is_blocked(monkeypatch):
     ok, reason = app_module.is_public_scan_target("internal.example")
     assert ok is False
     assert "private" in reason.lower()
+
+
+def test_health_endpoint(client):
+    response = client.get("/healthz")
+    assert response.status_code == 200
+    assert response.get_json()["status"] == "ok"
+
+
+def test_bulk_scan_rejects_only_blank_urls(client):
+    response = client.post("/api/bulk-scan", json={"urls": ["", "   "]})
+    assert response.status_code == 400
+
+
+def test_history_requires_login(client):
+    response = client.get("/api/history")
+    assert response.status_code == 302

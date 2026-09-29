@@ -1,0 +1,18 @@
+services:
+  phishguard:
+    build: .
+    ports:
+      - "5000:5000"
+    env_file:
+      - .env
+    environment:
+      SESSION_COOKIE_SECURE: "0"
+      FLASK_DEBUG: "0"
+    volumes:
+      - phishguard-data:/app/database
+      - phishguard-models:/app/models
+    restart: unless-stopped
+
+volumes:
+  phishguard-data:
+  phishguard-models:

@@ -3,7 +3,8 @@ PhishGuard AI — Real ML training pipeline.
 Metrics are calculated from the downloaded real-source dataset; nothing is hard-coded.
 """
 from pathlib import Path
-import json, pickle
+import json, pickle, hashlib
+from datetime import datetime, timezone
 import pandas as pd
 import numpy as np
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier, VotingClassifier
@@ -24,16 +25,28 @@ def main():
         raise SystemExit("Real dataset missing. Run: python dataset/download_real_dataset.py")
 
     raw = pd.read_csv(DATA)
-    if not {"url","label"}.issubset(raw.columns):
+    required = {"url", "label"}
+    if not required.issubset(raw.columns):
         raise SystemExit("Dataset must contain url,label columns.")
+    raw = raw.dropna(subset=["url", "label"]).copy()
+    raw["label"] = pd.to_numeric(raw["label"], errors="coerce")
+    raw = raw.dropna(subset=["label"])
+    raw["label"] = raw["label"].astype(int)
+    invalid = sorted(set(raw["label"]) - {0, 1, 2})
+    if invalid:
+        raise SystemExit(f"Unsupported labels found: {invalid}. Expected 0, 1, or 2.")
+    raw = raw.drop_duplicates(subset=["url"]).reset_index(drop=True)
+    dataset_sha256 = hashlib.sha256(DATA.read_bytes()).hexdigest()
 
     rows = []
+    dropped_rows = 0
     for i, r in raw.iterrows():
         try:
             f = extract_30_features(str(r["url"]))
             f["label"] = int(r["label"])
             rows.append(f)
         except Exception:
+            dropped_rows += 1
             continue
     df = pd.DataFrame(rows).dropna()
     if len(df) < 100:
@@ -42,6 +55,7 @@ def main():
     X = df[FEATURE_COLS].values
     y = df["label"].values
     classes = sorted(set(map(int,y)))
+    class_counts = {str(c): int((y == c).sum()) for c in classes}
     if len(classes) < 2:
         raise SystemExit("Need at least two real classes to train.")
 
@@ -100,7 +114,12 @@ def main():
     MODEL_DIR.mkdir(exist_ok=True)
     with open(MODEL_DIR/"phishguard_model.pkl","wb") as f: pickle.dump(model,f)
     metadata = {
+        "model_version": "1.0.0",
+        "trained_at_utc": datetime.now(timezone.utc).isoformat(),
+        "dataset_sha256": dataset_sha256,
         "dataset_samples": int(len(df)),
+        "dataset_class_counts": class_counts,
+        "dropped_rows": int(dropped_rows),
         "dataset_source": "OpenPhish + URLhaus + Tranco public feeds",
         "accuracy": float(acc), "precision": float(prec), "recall": float(rec), "f1_score": float(f1),
         "cv_mean": cv_mean, "cv_std": cv_std,

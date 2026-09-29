@@ -200,6 +200,7 @@
         </table>
       </div>
       <form class="bl-form" action="/admin/blacklist/add" method="POST">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input class="bl-input" type="text" name="url" placeholder="URL to blacklist…" required>
         <input class="bl-input" type="text" name="reason" placeholder="Reason (optional)">
         <button type="submit" class="bl-btn">🚫 Add</button>

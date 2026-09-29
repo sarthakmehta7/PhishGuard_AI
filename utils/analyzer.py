@@ -7,6 +7,7 @@ Authors: Sarthak Mehta, Prajwal Kumar, Divyansh Yadav
 import re, socket, ssl, json, time, ipaddress
 import urllib.parse
 import urllib.request
+from functools import lru_cache
 from datetime import datetime, timezone
 from typing import Optional
 import tldextract
@@ -213,6 +214,7 @@ def check_ssl_certificate(hostname: str, timeout=5) -> dict:
     return result
 
 
+@lru_cache(maxsize=512)
 def check_dns(hostname: str, timeout=5) -> dict:
     """Real DNS resolution check."""
     result = {"resolves": False, "ip_addresses": [], "mx_records": [], "error": None}
@@ -241,6 +243,7 @@ def check_dns(hostname: str, timeout=5) -> dict:
     return result
 
 
+@lru_cache(maxsize=256)
 def check_whois(domain: str, timeout=8) -> dict:
     """Real WHOIS lookup for domain age and registration info."""
     result = {"registered": False, "creation_date": None, "age_days": None,
@@ -269,6 +272,19 @@ def check_whois(domain: str, timeout=8) -> dict:
     return result
 
 
+
+class _PublicRedirectHandler(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        parsed = urllib.parse.urlparse(newurl)
+        if parsed.scheme not in {'http', 'https'} or not parsed.hostname:
+            raise urllib.error.URLError('Blocked non-HTTP redirect')
+        allowed, reason = is_public_scan_target(parsed.hostname)
+        if not allowed:
+            raise urllib.error.URLError(reason or 'Blocked private redirect')
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+_HTTP_OPENER = urllib.request.build_opener(_PublicRedirectHandler())
+
 def check_http_response(url: str, timeout=6) -> dict:
     """Real HTTP request: check status, headers, redirects."""
     result = {
@@ -284,7 +300,7 @@ def check_http_response(url: str, timeout=6) -> dict:
             headers={"User-Agent": "Mozilla/5.0 (PhishGuard Security Scanner)"},
         )
         t0 = time.time()
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
+        with _HTTP_OPENER.open(req, timeout=timeout) as resp:
             elapsed = int((time.time() - t0) * 1000)
             result.update({
                 "reachable":        True,

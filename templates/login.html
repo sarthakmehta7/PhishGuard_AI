@@ -36,6 +36,7 @@
     {% endwith %}
 
     <form method="POST" action="/login">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <div class="form-field">
         <label class="form-lbl">Username</label>
         <input class="form-inp" type="text" name="username" placeholder="admin" required autocomplete="username">
@@ -53,7 +54,7 @@
 
     <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--border);
                 font-family:var(--mono);font-size:10px;color:var(--text3);text-align:center;letter-spacing:.05em">
-      Default: admin / admin@123 · Change in production!<br><br>
+      Admin credentials are configured by the deployment environment.<br><br>
       Authors: Sarthak Mehta · Prajwal Kumar · Divyansh Yadav
     </div>
   </div>

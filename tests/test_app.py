@@ -51,3 +51,10 @@ def test_security_headers(client):
     response = client.get("/")
     assert response.headers.get("X-Content-Type-Options") == "nosniff"
     assert response.headers.get("X-Frame-Options") == "SAMEORIGIN"
+
+
+def test_private_scan_target_is_blocked(monkeypatch):
+    monkeypatch.setattr(app_module, "_public_ips", lambda host: ["192.168.1.10"])
+    ok, reason = app_module.is_public_scan_target("internal.example")
+    assert ok is False
+    assert "private" in reason.lower()

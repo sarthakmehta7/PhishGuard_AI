@@ -250,7 +250,7 @@ def bulk_scan():
 def explain_features(url):
     """Return feature explanation for a URL."""
     if not url.startswith(("http://","https://")): url = "https://" + url
-    from utils.analyzer import extract_30_features, FEATURE_COLS
+    from utils.analyzer import extract_30_features
     feats = extract_30_features(url)
     fi    = metadata.get("feature_importance", {})
     explained = [
@@ -384,6 +384,6 @@ def e500(e):
 
 if __name__ == "__main__":
     setup()
-    port = int(os.environ.get("PORT", 5000))
+    port = int(os.environ.get("PORT", "5000"))
     debug = os.environ.get("FLASK_DEBUG", "0").lower() in {"1", "true", "yes"}
     app.run(debug=debug, host="0.0.0.0", port=port)

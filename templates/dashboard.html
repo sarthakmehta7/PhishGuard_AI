@@ -31,7 +31,7 @@
       <a class="ds-item" href="/">🔍 Scanner</a>
       <a class="ds-item" href="/dashboard">📋 Scan History</a>
       <a class="ds-item" href="/dashboard">🚫 Blacklist</a>
-      <a class="ds-item" href="/logout" style="color:var(--red);margin-top:auto">↩ Logout</a>
+      <form method="POST" action="/logout" style="margin-top:auto"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="ds-item" type="submit" style="color:var(--red);background:none;border:0;width:100%;text-align:left;cursor:pointer">↩ Logout</button></form>
     </nav>
     <div class="ds-footer">
       <div class="ds-user">

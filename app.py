@@ -5,6 +5,8 @@ Authors: Sarthak Mehta, Prajwal Kumar, Divyansh Yadav
 """
 
 import os, pickle, json, threading, logging
+from dotenv import load_dotenv
+load_dotenv()
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import numpy as np
 from flask import (Flask, render_template, request, jsonify,

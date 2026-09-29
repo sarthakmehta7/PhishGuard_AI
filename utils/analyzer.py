@@ -55,6 +55,36 @@ def normalize_url(url: str) -> str:
     return url
 
 
+def _public_ips(hostname: str) -> list[str]:
+    """Resolve a hostname and return only its IPs; reject private/local targets."""
+    if not hostname:
+        return []
+    try:
+        infos = socket.getaddrinfo(hostname, None, type=socket.SOCK_STREAM)
+    except Exception:
+        return []
+    ips = sorted({info[4][0] for info in infos})
+    return ips
+
+
+def is_public_scan_target(hostname: str) -> tuple[bool, str | None]:
+    """Prevent the public scanner from reaching localhost/private/link-local networks."""
+    try:
+        direct = ipaddress.ip_address(hostname)
+        if not direct.is_global:
+            return False, "Private or non-public IP addresses are not scannable."
+        return True, None
+    except ValueError:
+        pass
+
+    ips = _public_ips(hostname)
+    if not ips:
+        return False, "Host could not be resolved to a public address."
+    if any(not ipaddress.ip_address(ip).is_global for ip in ips):
+        return False, "Host resolves to a private or non-public address."
+    return True, None
+
+
 # ── 30 Real Features ─────────────────────────────────────────
 def extract_30_features(url: str) -> dict:
     try:
@@ -377,10 +407,19 @@ def full_analysis(url: str) -> dict:
     # 1. Feature extraction (for ML)
     features = extract_30_features(url)
 
-    # 2. Live checks (run with short timeouts so UI stays responsive)
-    ssl_info  = check_ssl_certificate(hostname)      if hostname else {}
-    dns_info  = check_dns(hostname)                  if hostname else {}
-    http_info = check_http_response(url)
+    # 2. Block SSRF targets before any server-side network probe.
+    target_ok, target_error = is_public_scan_target(hostname) if hostname else (False, "Invalid hostname.")
+    if target_ok:
+        ssl_info  = check_ssl_certificate(hostname)
+        dns_info  = check_dns(hostname)
+        http_info = check_http_response(url)
+    else:
+        ssl_info = {"valid": False, "error": target_error}
+        dns_info = {"resolves": False, "ip_addresses": [], "mx_records": [], "error": target_error}
+        http_info = {"reachable": False, "status_code": None, "final_url": url, "redirect_count": 0,
+                     "server": "Unknown", "content_type": "Unknown", "has_csp": False,
+                     "has_hsts": False, "has_xframe": False, "error": target_error,
+                     "response_time_ms": None}
     gsb_info  = check_google_safe_browsing(url)
 
     # 3. WHOIS — slow, so catch timeout gracefully

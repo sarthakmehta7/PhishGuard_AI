@@ -85,6 +85,7 @@ def index():
 
 @app.route("/scan", methods=["POST"])
 @limiter.limit("20/minute")
+@csrf.exempt
 def scan():
     if not model:
         return jsonify({"error": "Model not loaded. Run python train_model.py first."}), 503
@@ -172,6 +173,7 @@ def scan():
 
 @app.route("/api/bulk-scan", methods=["POST"])
 @limiter.limit("5/minute")
+@csrf.exempt
 def bulk_scan():
     """Scan multiple URLs at once (up to 10)."""
     if not model:
@@ -227,6 +229,7 @@ def api_history():
 
 @app.route("/api/feedback", methods=["POST"])
 @limiter.limit("20/minute")
+@csrf.exempt
 def api_feedback():
     d = request.get_json(silent=True) or {}
     if not isinstance(d.get("correct", True), bool):
@@ -310,6 +313,14 @@ def api_stats():
 def api_model_info():
     return jsonify(metadata)
 
+
+@app.after_request
+def security_headers(response):
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
+    response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+    return response
 
 @app.errorhandler(404)
 def e404(e): return render_template("404.html"), 404

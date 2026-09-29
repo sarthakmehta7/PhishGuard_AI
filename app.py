@@ -4,10 +4,13 @@ Real ML + Real Live Checks (DNS, SSL, WHOIS, HTTP)
 Authors: Sarthak Mehta, Prajwal Kumar, Divyansh Yadav
 """
 
-import os, pickle, json, threading
+import os, pickle, json, threading, logging
 import numpy as np
 from flask import (Flask, render_template, request, jsonify,
                    redirect, url_for, session, flash)
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
+from flask_wtf.csrf import CSRFProtect
 from werkzeug.security import generate_password_hash, check_password_hash
 from functools import wraps
 from datetime import datetime
@@ -19,9 +22,18 @@ from database.db import (init_db, save_scan, get_recent_scans, get_stats,
 
 # ── App ───────────────────────────────────────────────────────
 app = Flask(__name__)
-app.secret_key = os.environ.get("SECRET_KEY", "phishguard-secret-2024-sliet")
+secret_key = os.environ.get("SECRET_KEY")
+if not secret_key:
+    raise RuntimeError("SECRET_KEY environment variable is required.")
+app.secret_key = secret_key
 app.config["SESSION_COOKIE_HTTPONLY"] = True
-app.config["SESSION_COOKIE_SAMESITE"]  = "Lax"
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+app.config["SESSION_COOKIE_SECURE"] = os.environ.get("SESSION_COOKIE_SECURE", "1").lower() in {"1", "true", "yes"}
+app.config["MAX_CONTENT_LENGTH"] = 256 * 1024
+
+csrf = CSRFProtect(app)
+limiter = Limiter(key_func=get_remote_address, app=app, default_limits=[])
+logger = logging.getLogger(__name__)
 
 BASE      = os.path.dirname(os.path.abspath(__file__))
 MODEL_PATH = os.path.join(BASE, "models", "phishguard_model.pkl")
@@ -53,9 +65,13 @@ def login_required(f):
 # ── Startup ───────────────────────────────────────────────────
 def setup():
     init_db()
-    if not get_user("admin"):
-        create_user("admin", generate_password_hash("admin@123"), "admin")
-        print("[+] Default admin: admin / admin@123")
+    admin_username = os.environ.get("ADMIN_USERNAME")
+    admin_password = os.environ.get("ADMIN_PASSWORD")
+    if admin_username and admin_password and not get_user(admin_username):
+        create_user(admin_username, generate_password_hash(admin_password), "admin")
+        print(f"[+] Bootstrap admin created: {admin_username}")
+    elif not admin_username or not admin_password:
+        logger.warning("ADMIN_USERNAME/ADMIN_PASSWORD not set; no admin account will be bootstrapped.")
 
 # ─────────────────────────────────────────────────────────────
 #  PUBLIC ROUTES
@@ -68,6 +84,7 @@ def index():
 
 
 @app.route("/scan", methods=["POST"])
+@limiter.limit("20/minute")
 def scan():
     if not model:
         return jsonify({"error": "Model not loaded. Run python train_model.py first."}), 503
@@ -154,12 +171,17 @@ def scan():
 
 
 @app.route("/api/bulk-scan", methods=["POST"])
+@limiter.limit("5/minute")
 def bulk_scan():
     """Scan multiple URLs at once (up to 10)."""
     if not model:
         return jsonify({"error": "Model not loaded."}), 503
     data = request.get_json()
-    urls = (data or {}).get("urls", [])[:10]
+    urls = (data or {}).get("urls", [])
+    if not isinstance(urls, list) or len(urls) > 10:
+        return jsonify({"error": "Provide between 1 and 10 URLs."}), 400
+    if not all(isinstance(u, str) for u in urls):
+        return jsonify({"error": "Each URL must be a string."}), 400
     if not urls:
         return jsonify({"error": "No URLs provided."}), 400
 
@@ -183,6 +205,7 @@ def bulk_scan():
 
 
 @app.route("/api/features/<path:url>")
+@limiter.limit("20/minute")
 def explain_features(url):
     """Return feature explanation for a URL."""
     if not url.startswith(("http://","https://")): url = "https://" + url
@@ -203,9 +226,14 @@ def api_history():
 
 
 @app.route("/api/feedback", methods=["POST"])
+@limiter.limit("20/minute")
 def api_feedback():
-    d = request.get_json()
-    add_feedback(d.get("scan_id"), d.get("url"), d.get("correct", True), d.get("comment",""))
+    d = request.get_json(silent=True) or {}
+    if not isinstance(d.get("correct", True), bool):
+        return jsonify({"error": "correct must be boolean."}), 400
+    if d.get("comment", "") and len(str(d["comment"])) > 1000:
+        return jsonify({"error": "Comment too long."}), 400
+    add_feedback(d.get("scan_id"), d.get("url"), d.get("correct", True), str(d.get("comment", "")))
     return jsonify({"ok": True})
 
 
@@ -214,6 +242,7 @@ def api_feedback():
 # ─────────────────────────────────────────────────────────────
 
 @app.route("/login", methods=["GET","POST"])
+@limiter.limit("5/minute", methods=["POST"])
 def login():
     if "user_id" in session:
         return redirect(url_for("dashboard"))
@@ -257,10 +286,14 @@ def dashboard():
 
 
 @app.route("/admin/blacklist/add", methods=["POST"])
+@limiter.limit("20/minute")
 @login_required
 def admin_blacklist_add():
     u = request.form.get("url","").strip()
     r = request.form.get("reason","Manually blacklisted").strip()
+    if len(u) > 2048 or len(r) > 500:
+        flash("Input is too long.", "error")
+        return redirect(url_for("dashboard"))
     if u:
         ok = add_blacklist(u, r, session.get("username"))
         flash(f"'{u}' added." if ok else "Already blacklisted.", "success" if ok else "warning")
@@ -281,11 +314,17 @@ def api_model_info():
 @app.errorhandler(404)
 def e404(e): return render_template("404.html"), 404
 
+@app.errorhandler(429)
+def e429(e): return jsonify({"error": "Too many requests. Please try again later."}), 429
+
 @app.errorhandler(500)
-def e500(e): return jsonify({"error": "Server error"}), 500
+def e500(e):
+    logger.exception("Unhandled server error")
+    return jsonify({"error": "Server error"}), 500
 
 
 if __name__ == "__main__":
     setup()
     port = int(os.environ.get("PORT", 5000))
-    app.run(debug=True, host="0.0.0.0", port=port)
+    debug = os.environ.get("FLASK_DEBUG", "0").lower() in {"1", "true", "yes"}
+    app.run(debug=debug, host="0.0.0.0", port=port)

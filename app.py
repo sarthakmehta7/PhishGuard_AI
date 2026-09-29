@@ -205,6 +205,9 @@ def bulk_scan():
             normalized.append(url)
             seen.add(url)
 
+    if not normalized:
+        return jsonify({"error": "No valid URLs provided."}), 400
+
     def worker(url):
         analysis = full_analysis(url)
         vec = np.array(analysis["feature_vector"]).reshape(1, -1)

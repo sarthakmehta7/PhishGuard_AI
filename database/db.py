@@ -8,7 +8,10 @@ from datetime import datetime
 DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "phishguard.db")
 
 def get_conn():
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=10)
+    conn.execute("PRAGMA busy_timeout=10000")
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA foreign_keys=ON")
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -62,6 +65,10 @@ def init_db():
         added_at  DATETIME DEFAULT CURRENT_TIMESTAMP
     )""")
 
+    c.execute("CREATE INDEX IF NOT EXISTS idx_scans_scanned_at ON scans(scanned_at)")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_scans_label ON scans(label)")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_blacklist_url ON blacklist(url)")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_feedback_scan_id ON feedback(scan_id)")
     conn.commit(); conn.close()
     print("[+] DB initialized:", DB_PATH)
 

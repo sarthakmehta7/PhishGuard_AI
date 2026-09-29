@@ -5,6 +5,7 @@ Authors: Sarthak Mehta, Prajwal Kumar, Divyansh Yadav
 """
 
 import os, pickle, json, threading, logging
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import numpy as np
 from flask import (Flask, render_template, request, jsonify,
                    redirect, url_for, session, flash)
@@ -190,22 +191,43 @@ def bulk_scan():
     if not urls:
         return jsonify({"error": "No URLs provided."}), 400
 
-    results = []
-    for url in urls:
-        url = url.strip()
-        if not url: continue
-        if not url.startswith(("http://","https://")): url = "https://" + url
+    normalized = []
+    seen = set()
+    for raw_url in urls:
+        url = raw_url.strip()
+        if not url:
+            continue
+        if len(url) > 2048:
+            continue
+        if not url.startswith(("http://", "https://")):
+            url = "https://" + url
+        if url not in seen:
+            normalized.append(url)
+            seen.add(url)
+
+    def worker(url):
         analysis = full_analysis(url)
-        vec   = np.array(analysis["feature_vector"]).reshape(1, -1)
+        vec = np.array(analysis["feature_vector"]).reshape(1, -1)
         label = int(model.predict(vec)[0])
         probs = model.predict_proba(vec)[0]
-        if is_blacklisted(url): label = 2; probs = np.array([0.0, 0.02, 0.98])
-        risk  = round(min(probs[1]*45 + probs[2]*100, 99.9), 1)
-        results.append({
-            "url": url, "prediction": LABEL_MAP[label],
+        if is_blacklisted(url):
+            label, probs = 2, np.array([0.0, 0.02, 0.98])
+        risk = round(min(probs[1] * 45 + probs[2] * 100, 99.9), 1)
+        return {
+            "url": url,
+            "prediction": LABEL_MAP[label],
             "prediction_class": LABEL_CLASS[label],
             "risk_score": risk,
-        })
+        }
+
+    results = []
+    with ThreadPoolExecutor(max_workers=min(4, len(normalized))) as pool:
+        futures = {pool.submit(worker, u): u for u in normalized}
+        for future in as_completed(futures):
+            try:
+                results.append(future.result())
+            except Exception:
+                results.append({"url": futures[future], "error": "Scan failed"})
     return jsonify({"results": results})
 
 
@@ -226,8 +248,9 @@ def explain_features(url):
 
 
 @app.route("/api/history")
+@login_required
 def api_history():
-    return jsonify(get_recent_scans(10))
+    return jsonify(get_recent_scans(25))
 
 
 @app.route("/api/feedback", methods=["POST"])
@@ -311,6 +334,10 @@ def admin_blacklist_add():
 def api_stats():
     return jsonify(get_stats())
 
+
+@app.route("/healthz")
+def healthz():
+    return jsonify({"status": "ok", "model_loaded": model is not None, "version": metadata.get("model_version", "unknown")})
 
 @app.route("/api/model-info")
 def api_model_info():

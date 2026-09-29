@@ -65,6 +65,15 @@ def login_required(f):
         return f(*args, **kwargs)
     return wrapper
 
+
+def admin_required(f):
+    @wraps(f)
+    def wrapper(*args, **kwargs):
+        if session.get("role") != "admin":
+            return jsonify({"error": "Admin access required."}), 403
+        return f(*args, **kwargs)
+    return wrapper
+
 # ── Startup ───────────────────────────────────────────────────
 def setup():
     init_db()
@@ -287,6 +296,7 @@ def login():
             flash("Enter username and password.", "error"); return render_template("login.html")
         user = get_user(u)
         if user and check_password_hash(user["password"], p):
+            session.clear()
             session["user_id"]  = user["id"]
             session["username"] = user["username"]
             session["role"]     = user["role"]
@@ -310,6 +320,7 @@ def logout():
 
 @app.route("/dashboard")
 @login_required
+@admin_required
 def dashboard():
     stats   = get_stats()
     scans   = get_recent_scans(20)
@@ -322,6 +333,7 @@ def dashboard():
 @app.route("/admin/blacklist/add", methods=["POST"])
 @limiter.limit("20/minute")
 @login_required
+@admin_required
 def admin_blacklist_add():
     u = request.form.get("url","").strip()
     r = request.form.get("reason","Manually blacklisted").strip()
@@ -336,6 +348,7 @@ def admin_blacklist_add():
 
 @app.route("/api/stats")
 @login_required
+@admin_required
 def api_stats():
     return jsonify(get_stats())
 

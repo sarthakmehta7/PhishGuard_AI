@@ -10,6 +10,7 @@
   <div class="login-sub">Create User Account</div>
   {% with messages = get_flashed_messages(with_categories=true) %}{% for cat,msg in messages %}<div class="flash flash-{{cat}}">{{msg}}</div>{% endfor %}{% endwith %}
   <form method="POST">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <div class="form-field"><label class="form-lbl">Username</label><input class="form-inp" name="username" minlength="3" maxlength="30" required></div>
     <div class="form-field"><label class="form-lbl">Email</label><input class="form-inp" type="email" name="email" required autocomplete="email"></div>
     <div class="form-field"><label class="form-lbl">Password</label><input class="form-inp" type="password" name="password" minlength="8" required autocomplete="new-password"></div>

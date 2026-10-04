@@ -37,7 +37,7 @@
         <span>Model not loaded</span>
       {% endif %}
     </div>
-    <a href="/dashboard" class="nav-btn-ghost">Dashboard</a>
+    <a href="{% if session.get('role') == 'admin' %}/dashboard{% else %}/user-dashboard{% endif %}" class="nav-btn-ghost">Dashboard</a>
     <a href="/login" class="nav-btn">Admin →</a>
   </div>
 </nav>

@@ -578,6 +578,11 @@ body {
 .flash-error   { background:rgba(239,68,68,.1);  border:1px solid rgba(239,68,68,.25);  color:var(--red); }
 .flash-warning { background:rgba(245,158,11,.1); border:1px solid rgba(245,158,11,.25); color:var(--yellow); }
 .flash-info    { background:rgba(34,211,238,.08); border:1px solid rgba(34,211,238,.2); color:var(--teal); }
+.login-links { margin-top:20px; text-align:center; font-family:var(--mono); font-size:11px; color:var(--text3); }
+.login-links a { color:var(--teal); text-decoration:none; }
+.otp-help { color:var(--text2); font-size:13px; line-height:1.6; text-align:center; margin:16px 0; }
+.dev-otp { margin:16px 0 20px; padding:14px; border:1px solid rgba(34,211,238,.35); border-radius:var(--r); background:rgba(34,211,238,.08); color:var(--teal); font:700 28px var(--mono); letter-spacing:.25em; text-align:center; }
+.otp-input { text-align:center; letter-spacing:.3em; }
 
 /* 404 */
 .err-page { display:flex; flex-direction:column; align-items:center; justify-content:center; min-height:80vh; text-align:center; position:relative; z-index:1; }

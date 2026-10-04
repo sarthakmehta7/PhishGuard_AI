@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PhishGuard — User Login</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+</head>
+<body><div class="bg-grid"></div><div class="login-page"><div class="login-card">
+  <div class="login-logo-name">PhishGuard AI</div>
+  <div class="login-sub">Personal Threat Scanner</div>
+  {% with messages = get_flashed_messages(with_categories=true) %}{% for cat,msg in messages %}<div class="flash flash-{{cat}}">{{msg}}</div>{% endfor %}{% endwith %}
+  <form method="POST">
+    <div class="form-field"><label class="form-lbl">Email</label><input class="form-inp" type="email" name="email" required autocomplete="email"></div>
+    <div class="form-field"><label class="form-lbl">Password</label><input class="form-inp" type="password" name="password" required autocomplete="current-password"></div>
+    <button class="form-btn" type="submit">Continue to Verification →</button>
+  </form>
+  <div class="login-links">New user? <a href="{{ url_for('register') }}">Create account</a><br><br><a href="{{ url_for('admin_login') }}">Administrator Login</a><br><br><a href="/">← Back</a></div>
+</div></div></body></html>

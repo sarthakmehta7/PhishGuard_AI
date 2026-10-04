@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PhishGuard — User Dashboard</title>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+</head>
+<body>
+<div class="bg-grid"></div>
+<nav class="nav">
+  <div class="logo-name">PhishGuard <span>AI</span></div>
+  <div class="nav-right">
+    <span class="model-badge">User: {{ username }}</span>
+    <a href="/" class="nav-btn-ghost">Scanner</a>
+    <a href="/logout" class="nav-btn">Logout</a>
+  </div>
+</nav>
+<main class="dash-main" style="max-width:1100px;margin:0 auto">
+  <div class="dash-topbar">
+    <div>
+      <div class="dash-title">User Dashboard</div>
+      <div class="dash-sub">Your personal PhishGuard scan history</div>
+    </div>
+  </div>
+  <div class="stat-row">
+    <div class="stat-card stat-teal"><div class="stat-label">Total Scans</div><div class="stat-val">{{ stats.total }}</div></div>
+    <div class="stat-card stat-green"><div class="stat-label">Safe</div><div class="stat-val">{{ stats.by_label.get(0, 0) }}</div></div>
+    <div class="stat-card stat-yellow"><div class="stat-label">Suspicious</div><div class="stat-val">{{ stats.by_label.get(1, 0) }}</div></div>
+    <div class="stat-card stat-red"><div class="stat-label">Phishing</div><div class="stat-val">{{ stats.by_label.get(2, 0) }}</div></div>
+    <div class="stat-card"><div class="stat-label">Average Risk</div><div class="stat-val" style="color:var(--orange)">{{ stats.avg_risk }}%</div></div>
+  </div>
+  <div class="table-card">
+    <div class="table-head"><span>My Recent Scans</span><span>{{ scans|length }} records</span></div>
+    <div style="overflow-x:auto">
+      <table class="data-table">
+        <thead><tr><th>URL</th><th>Verdict</th><th>Risk</th><th>Scanned At</th></tr></thead>
+        <tbody>
+        {% for scan in scans %}
+          <tr>
+            <td class="td-url" title="{{ scan.url }}">{{ scan.url }}</td>
+            <td><span class="lbadge lb-{{ scan.prediction|lower }}">{{ scan.prediction }}</span></td>
+            <td>{{ "%.1f"|format(scan.risk_score) }}%</td>
+            <td style="color:var(--text3)">{{ scan.scanned_at }}</td>
+          </tr>
+        {% else %}
+          <tr><td colspan="4" style="text-align:center;padding:24px;color:var(--text3)">No scans yet. Open the scanner to analyze a URL.</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</main>
+</body>
+</html>

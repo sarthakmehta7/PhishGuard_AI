@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PhishGuard — Admin Login</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+</head>
+<body><div class="bg-grid"></div><div class="login-page"><div class="login-card">
+  <div class="login-logo-name">PhishGuard AI</div>
+  <div class="login-sub">Administrator Console</div>
+  {% with messages = get_flashed_messages(with_categories=true) %}{% for cat,msg in messages %}<div class="flash flash-{{cat}}">{{msg}}</div>{% endfor %}{% endwith %}
+  <form method="POST">
+    <div class="form-field"><label class="form-lbl">Admin Username</label><input class="form-inp" name="username" required autocomplete="username"></div>
+    <div class="form-field"><label class="form-lbl">Admin Password</label><input class="form-inp" type="password" name="password" required autocomplete="current-password"></div>
+    <button class="form-btn" type="submit">Enter Admin Console →</button>
+  </form>
+  <div class="login-links"><a href="{{ url_for('user_login') }}">User Login</a><br><br><a href="/">← Back</a></div>
+</div></div></body></html>

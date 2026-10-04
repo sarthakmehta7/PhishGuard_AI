@@ -21,6 +21,7 @@ def init_db():
 
     c.execute("""CREATE TABLE IF NOT EXISTS scans (
         id           INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id      INTEGER,
         url          TEXT NOT NULL,
         hostname     TEXT,
         prediction   TEXT NOT NULL,
@@ -38,14 +39,32 @@ def init_db():
         ip_address   TEXT,
         scanned_at   DATETIME DEFAULT CURRENT_TIMESTAMP
     )""")
+    try:
+        c.execute("ALTER TABLE scans ADD COLUMN user_id INTEGER")
+    except sqlite3.OperationalError:
+        pass
 
     c.execute("""CREATE TABLE IF NOT EXISTS users (
         id           INTEGER PRIMARY KEY AUTOINCREMENT,
         username     TEXT UNIQUE NOT NULL,
+        email        TEXT UNIQUE,
         password     TEXT NOT NULL,
         role         TEXT DEFAULT 'admin',
         created_at   DATETIME DEFAULT CURRENT_TIMESTAMP,
         last_login   DATETIME
+    )""")
+    try:
+        c.execute("ALTER TABLE users ADD COLUMN email TEXT")
+    except sqlite3.OperationalError:
+        pass
+
+    c.execute("""CREATE TABLE IF NOT EXISTS otp_challenges (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id    INTEGER NOT NULL,
+        otp_hash   TEXT NOT NULL,
+        expires_at DATETIME NOT NULL,
+        attempts   INTEGER DEFAULT 0,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )""")
 
     c.execute("""CREATE TABLE IF NOT EXISTS blacklist (
@@ -74,18 +93,35 @@ def init_db():
 
 def save_scan(url, hostname, prediction, label, risk_score, probs,
               ssl_valid, dns_resolves, http_status, domain_age,
-              features, reasons, ip_address):
+              features, reasons, ip_address, user_id=None):
     conn = get_conn(); c = conn.cursor()
     c.execute("""INSERT INTO scans
-        (url,hostname,prediction,label,risk_score,prob_safe,prob_susp,prob_phish,
+        (user_id,url,hostname,prediction,label,risk_score,prob_safe,prob_susp,prob_phish,
          ssl_valid,dns_resolves,http_status,domain_age,features_json,reasons_json,ip_address)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-        (url, hostname, prediction, label, risk_score,
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+        (user_id, url, hostname, prediction, label, risk_score,
          probs[0], probs[1], probs[2],
          int(ssl_valid), int(dns_resolves), http_status, domain_age,
          json.dumps(features), json.dumps(reasons), ip_address))
     sid = c.lastrowid; conn.commit(); conn.close()
     return sid
+
+def get_user_scans(user_id, limit=50):
+    conn = get_conn(); c = conn.cursor()
+    c.execute("SELECT * FROM scans WHERE user_id=? ORDER BY scanned_at DESC LIMIT ?",
+              (user_id, limit))
+    rows = [dict(r) for r in c.fetchall()]; conn.close(); return rows
+
+def get_user_stats(user_id):
+    conn = get_conn(); c = conn.cursor()
+    c.execute("SELECT COUNT(*) FROM scans WHERE user_id=?", (user_id,))
+    total = c.fetchone()[0]
+    c.execute("SELECT label, COUNT(*) FROM scans WHERE user_id=? GROUP BY label", (user_id,))
+    by_label = {r[0]: r[1] for r in c.fetchall()}
+    c.execute("SELECT AVG(risk_score) FROM scans WHERE user_id=?", (user_id,))
+    avg_risk = c.fetchone()[0] or 0
+    conn.close()
+    return {"total": total, "by_label": by_label, "avg_risk": round(avg_risk, 1)}
 
 def get_recent_scans(limit=50):
     conn = get_conn(); c = conn.cursor()
@@ -115,11 +151,29 @@ def get_user(username):
     r = c.fetchone(); conn.close()
     return dict(r) if r else None
 
-def create_user(username, hashed_pw, role="admin"):
+def get_user_by_email(email):
+    conn = get_conn(); c = conn.cursor()
+    c.execute("SELECT * FROM users WHERE lower(email)=lower(?)", (email,))
+    r = c.fetchone(); conn.close()
+    return dict(r) if r else None
+
+def get_user_by_id(user_id):
+    conn = get_conn(); c = conn.cursor()
+    c.execute("SELECT * FROM users WHERE id=?", (user_id,))
+    r = c.fetchone(); conn.close()
+    return dict(r) if r else None
+
+def get_all_users():
+    conn = get_conn(); c = conn.cursor()
+    c.execute("""SELECT id, username, email, role, created_at, last_login
+                 FROM users ORDER BY created_at DESC""")
+    rows = [dict(r) for r in c.fetchall()]; conn.close(); return rows
+
+def create_user(username, hashed_pw, role="admin", email=None):
     conn = get_conn(); c = conn.cursor()
     try:
-        c.execute("INSERT INTO users (username,password,role) VALUES (?,?,?)",
-                  (username, hashed_pw, role))
+        c.execute("INSERT INTO users (username,email,password,role) VALUES (?,?,?,?)",
+                  (username, email, hashed_pw, role))
         conn.commit(); uid = c.lastrowid
     except sqlite3.IntegrityError: uid = None
     finally: conn.close()
@@ -128,6 +182,31 @@ def create_user(username, hashed_pw, role="admin"):
 def update_last_login(uid):
     conn = get_conn(); c = conn.cursor()
     c.execute("UPDATE users SET last_login=? WHERE id=?", (datetime.now(), uid))
+    conn.commit(); conn.close()
+
+def create_otp_challenge(user_id, otp_hash, expires_at):
+    conn = get_conn(); c = conn.cursor()
+    c.execute("DELETE FROM otp_challenges WHERE user_id=?", (user_id,))
+    c.execute("INSERT INTO otp_challenges (user_id,otp_hash,expires_at) VALUES (?,?,?)",
+              (user_id, otp_hash, expires_at))
+    conn.commit(); challenge_id = c.lastrowid; conn.close()
+    return challenge_id
+
+def get_otp_challenge(user_id):
+    conn = get_conn(); c = conn.cursor()
+    c.execute("SELECT * FROM otp_challenges WHERE user_id=? ORDER BY id DESC LIMIT 1",
+              (user_id,))
+    row = c.fetchone(); conn.close()
+    return dict(row) if row else None
+
+def increment_otp_attempts(challenge_id):
+    conn = get_conn(); c = conn.cursor()
+    c.execute("UPDATE otp_challenges SET attempts=attempts+1 WHERE id=?", (challenge_id,))
+    conn.commit(); conn.close()
+
+def delete_otp_challenge(challenge_id):
+    conn = get_conn(); c = conn.cursor()
+    c.execute("DELETE FROM otp_challenges WHERE id=?", (challenge_id,))
     conn.commit(); conn.close()
 
 def add_blacklist(url, reason, added_by=None):

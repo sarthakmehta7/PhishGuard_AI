@@ -4,7 +4,7 @@ Real ML + Real Live Checks (DNS, SSL, WHOIS, HTTP)
 Authors: Sarthak Mehta, Prajwal Kumar, Divyansh Yadav
 """
 
-import os, pickle, json, threading, logging
+import os, pickle, json, threading, logging, secrets, ipaddress
 from dotenv import load_dotenv
 load_dotenv()
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -16,11 +16,16 @@ from flask_limiter.util import get_remote_address
 from flask_wtf.csrf import CSRFProtect
 from werkzeug.security import generate_password_hash, check_password_hash
 from functools import wraps
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 from utils.analyzer import full_analysis, get_recommendations, FEATURE_COLS
+from utils.analyzer import _public_ips as _analyzer_public_ips
 from database.db import (init_db, save_scan, get_recent_scans, get_stats,
-                         get_user, create_user, update_last_login,
+                         get_user, get_user_by_email, get_user_by_id, get_all_users,
+                         create_user, update_last_login,
+                         create_otp_challenge, get_otp_challenge,
+                         increment_otp_attempts, delete_otp_challenge,
+                         get_user_scans, get_user_stats,
                          add_blacklist, is_blacklisted, get_blacklist, add_feedback)
 
 # ── App ───────────────────────────────────────────────────────
@@ -44,6 +49,29 @@ META_PATH  = os.path.join(BASE, "models", "model_metadata.json")
 
 LABEL_MAP   = {0: "Safe", 1: "Suspicious", 2: "Phishing"}
 LABEL_CLASS = {0: "safe", 1: "suspicious", 2: "phishing"}
+
+
+def _public_ips(hostname):
+    return _analyzer_public_ips(hostname)
+
+
+def is_public_scan_target(hostname):
+    """Return whether a hostname resolves only to globally routable addresses."""
+    try:
+        direct = ipaddress.ip_address(hostname)
+        if not direct.is_global:
+            return False, "Private or non-public IP addresses are not scannable."
+        return True, None
+    except ValueError:
+        pass
+
+    ips = _public_ips(hostname)
+    if not ips:
+        return False, "Host could not be resolved to a public address."
+    if any(not ipaddress.ip_address(ip).is_global for ip in ips):
+        return False, "Host resolves to a private or non-public address."
+    return True, None
+
 
 # ── Load Model ────────────────────────────────────────────────
 model    = None
@@ -94,6 +122,8 @@ setup()
 
 @app.route("/")
 def index():
+    if "user_id" not in session:
+        return redirect(url_for("user_login"))
     model_ok = model is not None
     return render_template("index.html", model_ok=model_ok, metadata=metadata)
 
@@ -159,6 +189,7 @@ def scan():
         features     = features,
         reasons      = reasons,
         ip_address   = request.remote_addr,
+        user_id      = session.get("user_id"),
     )
 
     return jsonify({
@@ -284,16 +315,15 @@ def api_feedback():
 #  AUTH
 # ─────────────────────────────────────────────────────────────
 
-@app.route("/login", methods=["GET","POST"])
-@limiter.limit("5/minute", methods=["POST"])
-def login():
+@app.route("/admin-login", methods=["GET", "POST"])
+def admin_login():
     if "user_id" in session:
         return redirect(url_for("dashboard"))
     if request.method == "POST":
         u = request.form.get("username","").strip()
         p = request.form.get("password","")
         if not u or not p:
-            flash("Enter username and password.", "error"); return render_template("login.html")
+            flash("Enter username and password.", "error"); return render_template("admin_login.html")
         user = get_user(u)
         if user and check_password_hash(user["password"], p):
             session.clear()
@@ -302,9 +332,93 @@ def login():
             session["role"]     = user["role"]
             update_last_login(user["id"])
             flash(f"Welcome back, {u}!", "success")
+            if user["role"] != "admin":
+                flash("Use the user login portal for this account.", "warning")
+                return redirect(url_for("user_login"))
             return redirect(url_for("dashboard"))
         flash("Invalid credentials.", "error")
-    return render_template("login.html")
+    return render_template("admin_login.html")
+
+@app.route("/login")
+def login():
+    return redirect(url_for("user_login"))
+
+@app.route("/user-login", methods=["GET", "POST"])
+def user_login():
+    if "user_id" in session:
+        return redirect(url_for("dashboard"))
+    if request.method == "POST":
+        email = request.form.get("email", "").strip().lower()
+        password = request.form.get("password", "")
+        user = get_user_by_email(email)
+        if not user or user["role"] != "user" or not check_password_hash(user["password"], password):
+            flash("Invalid email or password.", "error")
+            return render_template("user_login.html")
+        otp = f"{secrets.randbelow(1000000):06d}"
+        expires_at = datetime.now(timezone.utc) + timedelta(minutes=10)
+        create_otp_challenge(user["id"], generate_password_hash(otp), expires_at.isoformat())
+        session["pending_user_id"] = user["id"]
+        session["development_otp"] = otp
+        return redirect(url_for("verify_otp"))
+    return render_template("user_login.html")
+
+@app.route("/verify-otp", methods=["GET", "POST"])
+def verify_otp():
+    user_id = session.get("pending_user_id")
+    if not user_id:
+        return redirect(url_for("user_login"))
+    challenge = get_otp_challenge(user_id)
+    if request.method == "POST":
+        otp = request.form.get("otp", "").strip()
+        expired = not challenge or challenge["attempts"] >= 5
+        if challenge and not expired:
+            expires_at = datetime.fromisoformat(challenge["expires_at"]).astimezone(timezone.utc)
+            expired = expires_at < datetime.now(timezone.utc)
+        if expired:
+            if challenge:
+                delete_otp_challenge(challenge["id"])
+            session.pop("pending_user_id", None)
+            session.pop("development_otp", None)
+            flash("Verification expired. Please log in again.", "error")
+            return redirect(url_for("user_login"))
+        increment_otp_attempts(challenge["id"])
+        if check_password_hash(challenge["otp_hash"], otp):
+            user = get_user_by_id(user_id)
+            session.clear()
+            session["user_id"] = user["id"]
+            session["username"] = user["username"]
+            session["role"] = "user"
+            update_last_login(user["id"])
+            delete_otp_challenge(challenge["id"])
+            return redirect(url_for("index"))
+        flash("Incorrect verification code.", "error")
+    return render_template("verify_otp.html", development_otp=session.get("development_otp"))
+
+@app.route("/register", methods=["GET", "POST"])
+def register():
+    if "user_id" in session:
+        return redirect(url_for("index"))
+    if request.method == "POST":
+        username = request.form.get("username", "").strip()
+        email = request.form.get("email", "").strip().lower()
+        password = request.form.get("password", "")
+        confirmation = request.form.get("confirm_password", "")
+        valid_username = 3 <= len(username) <= 30 and username.replace("_", "").isalnum()
+        valid_email = "@" in email and "." in email.rsplit("@", 1)[-1]
+        if not valid_username:
+            flash("Username must be 3–30 characters using letters, numbers, or underscores.", "error")
+        elif not valid_email:
+            flash("Enter a valid email address.", "error")
+        elif len(password) < 8:
+            flash("Password must contain at least 8 characters.", "error")
+        elif password != confirmation:
+            flash("Passwords do not match.", "error")
+        elif create_user(username, generate_password_hash(password), "user", email) is None:
+            flash("Username or email is already registered.", "error")
+        else:
+            flash("Account created. You can now sign in.", "success")
+            return redirect(url_for("user_login"))
+    return render_template("register.html")
 
 
 @app.route("/logout", methods=["POST"])
@@ -322,12 +436,25 @@ def logout():
 @login_required
 @admin_required
 def dashboard():
+    if session.get("role") != "admin":
+        return redirect(url_for("user_dashboard"))
     stats   = get_stats()
     scans   = get_recent_scans(20)
     bl      = get_blacklist(15)
+    users   = get_all_users()
     return render_template("dashboard.html",
-        stats=stats, scans=scans, blacklist=bl,
+        stats=stats, scans=scans, blacklist=bl, users=users,
         username=session.get("username"), metadata=metadata)
+
+@app.route("/user-dashboard")
+@login_required
+def user_dashboard():
+    if session.get("role") == "admin":
+        return redirect(url_for("dashboard"))
+    stats = get_user_stats(session["user_id"])
+    scans = get_user_scans(session["user_id"], 50)
+    return render_template("user_dashboard.html", stats=stats, scans=scans,
+                           username=session.get("username"))
 
 
 @app.route("/admin/blacklist/add", methods=["POST"])
